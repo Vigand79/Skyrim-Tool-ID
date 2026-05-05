@@ -55,6 +55,15 @@ Mentre le liste online forniscono ID generici che spesso non funzionano a causa 
 
 ---
 
+## 📸 Screenshot
+<p align="center">
+  <img src="assets/main_window.png" width="45%" alt="Finestra Principale">
+  <img src="assets/console.png" width="45%" alt="Visualizzazione Comandi Console">
+  > **Interfaccia Avanzata:** Design moderno in stile Skyrim, ottimizzato per risoluzioni 1000x800/860 con sistema di navigazione a pagine per gestire migliaia di record senza lag.
+</p>
+
+---
+
 ## 👨‍💻 Developer
 Sviluppato con passione da **VIGAND**. Dedicato alla community di Skyrim Modding.
 
