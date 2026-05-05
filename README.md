@@ -56,11 +56,14 @@ Mentre le liste online forniscono ID generici che spesso non funzionano a causa 
 ---
 
 ## 📸 Screenshot
-<p align="center">
-  <img src="assets/main_window.png" width="45%" alt="Finestra Principale">
-  <img src="assets/console.png" width="45%" alt="Visualizzazione Comandi Console">
-</p>
->**interfaccia Avanzata:** Design moderno in stile Skyrim, ottimizzato per risoluzioni 1000x800/860 con sistema di navigazione a pagine per gestire migliaia di record senza lag.
+
+### Finestra Principale
+![Main Window](assets/main_window.png)
+
+### Database e Console
+![Console View](assets/console.png)
+
+> **Interfaccia Avanzata:** Design moderno in stile Skyrim, ottimizzato per risoluzioni 1000x800/860 con sistema di navigazione a pagine per gestire migliaia di record senza lag.
 
 ---
 
