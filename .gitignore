@@ -1,0 +1,19 @@
+# Cartelle di compilazione
+build/
+dist/
+*.dist/
+*.build/
+
+# Cache di Python
+__pycache__/
+*.pyc
+
+# File del database generati dal tool
+db_*.csv
+
+# File personali di VS Code
+.vscode/
+
+# Altri file temporanei
+*.log
+*.tmp
