@@ -1,13 +1,13 @@
-import os, time, pyautogui, pyperclip, psutil
+import os, time, pyautogui, pyperclip, psutil, sys, winreg, json
 import tkinter as tk
-from tkinter import messagebox, ttk
-import sys
+from tkinter import messagebox, ttk, filedialog
 
-# Funzione per trovare il percorso corretto sia in script che in EXE
 def get_path(relative_path):
     try:
+        # Percorso per l'eseguibile compilato
         base_path = sys._MEIPASS
     except Exception:
+        # Percorso per lo script Python normale
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
@@ -17,12 +17,16 @@ class SkyrimTool:
         self.root.title("Skyrim Tool ID - by VIGAND")
         try:
             self.root.iconbitmap(get_path("logo.ico"))
-        except:
-            pass
+        except: pass
         self.root.geometry("1000x800") 
         self.root.configure(bg='#0c0c0c')
-        self.current_dir = os.getcwd()
-
+        # Rileva la cartella reale dove si trova lo script o l'eseguibile
+        if getattr(sys, 'frozen', False):
+            # Se è un EXE compilato
+            self.current_dir = os.path.dirname(sys.executable)
+        else:
+            # Se è lo script .py in esecuzione
+            self.current_dir = os.path.dirname(os.path.abspath(__file__))
         self.gold = "#c4a45d"
         self.bg_dark = "#0c0c0c"
         
@@ -31,66 +35,514 @@ class SkyrimTool:
         tk.Label(header, text="SKYRIM TOOL ID", font=("Impact", 42), bg=self.bg_dark, fg=self.gold).pack()
         tk.Label(header, text="ULTIMATE DATABASE UTILITY BY VIGAND", font=("Segoe UI", 10, "bold"), bg=self.bg_dark, fg="#555").pack()
 
-         # --- 1. PULSANTI SUPERIORI (SIMMETRICI) ---
         f_btns = tk.Frame(root, bg=self.bg_dark)
-        # Usiamo padx=200 per lo stesso allineamento della griglia
         f_btns.pack(fill='x', padx=200, pady=20)
         f_btns.grid_columnconfigure(0, weight=1, uniform="top_btns")
         f_btns.grid_columnconfigure(1, weight=1, uniform="top_btns")
-
         self.btn_main(f_btns, "1. GENERA DATABASE", self.start_incolla).grid(row=0, column=0, padx=8, sticky="nsew")
         self.btn_main(f_btns, "2. PULISCI FILE", self.pulisci_temp).grid(row=0, column=1, padx=8, sticky="nsew")
 
-        tk.Label(root, text="SELEZIONA UNA CATEGORIA", font=("Segoe UI", 11, "bold"), bg=self.bg_dark, fg="#888").pack(pady=(5, 5))
+        tk.Label(root, text="SELEZIONA UNA CATEGORIA", font=("Segoe UI", 11, "bold"), bg=self.bg_dark, fg="#888").pack(pady=(10, 5))
         
-# --- GRIGLIA CATEGORIE (2 COLONNE PER SIMMETRIA TOTALE) ---
         cat_container = tk.Frame(root, bg=self.bg_dark)
         cat_container.pack(fill='x', padx=200, pady=10)
-        # Forza le due colonne ad essere identiche
         cat_container.grid_columnconfigure(0, weight=1, uniform="group1")
         cat_container.grid_columnconfigure(1, weight=1, uniform="group1")
 
-        self.cats = [
-            ("PERSONAGGI", "NPC_"), ("ARMI", "WEAP"), ("ARMATURE", "ARMO"),
-            ("POZIONI", "POTION"), ("INGREDIENTI", "INGR"), ("CIBO", "FOOD"),
-            ("LIBRI", "BOOK"), ("OGGETTI VARI", "MISC"), ("INCANTESIMI", "SPEL"),
-            ("CREATURE / MOSTRI", "MONS")
-        ]
-
-        # Configuriamo 2 colonne
+        self.cats = [("PERSONAGGI", "NPC_"), ("ARMI", "WEAP"), ("ARMATURE", "ARMO"), ("POZIONI", "POTION"), ("INGREDIENTI", "INGR"), ("CIBO", "FOOD"), ("LIBRI", "BOOK"), ("OGGETTI VARI", "MISC"), ("INCANTESIMI", "SPEL"), ("CREATURE / MOSTRI", "MONS")]
         for i, (testo, filtro) in enumerate(self.cats):
             row, col = divmod(i, 2)
-            btn = tk.Button(cat_container, text=testo, 
-                            font=("Segoe UI", 10, "bold"), # Font leggermente ridotto
-                            bg="#1a1a1a", fg=self.gold, 
-                            activebackground=self.gold, activeforeground="#000", 
-                            relief='flat', 
-                            pady=10, # Altezza ridotta da 15 a 10
-                            command=lambda f=filtro, t=testo: self.open_db(f, t))
+            btn = tk.Button(cat_container, text=testo, font=("Segoe UI", 10, "bold"), bg="#1a1a1a", fg=self.gold, activebackground=self.gold, activeforeground="#000", relief='flat', cursor="hand2", pady=10, command=lambda f=filtro, t=testo: self.open_db(f, t))
             btn.grid(row=row, column=col, padx=8, pady=5, sticky="nsew")
 
-# --- 3. PULSANTE CONSOLE (PERFETTAMENTE COINCIDENTE) ---
         console_frame = tk.Frame(root, bg=self.bg_dark)
-        # Usiamo padx=210 e fill='x' per farlo largo quanto la griglia sopra
         console_frame.pack(fill='x', padx=210, pady=(20, 10))
-        
-        tk.Button(console_frame, text="💻 COMANDI CONSOLE", font=("Segoe UI", 11, "bold"), 
-                  bg="#c44d4d", fg="#fff", relief='flat', pady=12,
-                  command=self.open_console_cmds).pack(fill='both') # fill='both' lo adegua al frame
-
+        tk.Button(console_frame, text="💻 COMANDI CONSOLE", font=("Segoe UI", 11, "bold"), bg="#c44d4d", fg="#fff", relief='flat', cursor="hand2", pady=12, command=self.open_console_cmds).pack(fill='both')
         self.status = tk.Label(root, text="SISTEMA PRONTO", bg=self.bg_dark, fg=self.gold, font=("Segoe UI", 10, "bold"))
         self.status.pack(side="bottom", pady=10)
 
+    def get_skyrim_path(self):
+        conf_path = os.path.join(self.current_dir, "tool_config.json")
+        
+        # 1. Carica il percorso dal file JSON se esiste
+        if os.path.exists(conf_path):
+            try:
+                with open(conf_path, "r") as f:
+                    data = json.load(f)
+                    p = data.get("sky_p")
+                    if p and os.path.exists(p):
+                        return str(p)
+            except: pass
+
+        # 2. Cerca automaticamente (Processi o Registro)
+        found = None
+        for p in psutil.process_iter(['name', 'exe']):
+            try:
+                if p.info['name'] and p.info['name'].lower() in ["skyrimse.exe", "skyrim.exe"]:
+                    found = os.path.dirname(p.info['exe'])
+                    break
+            except: continue
+        
+        if not found:
+            reg_keys = [r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 489830", 
+                        r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 489830"]
+            for rk in reg_keys:
+                try:
+                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, rk) as k:
+                        found, _ = winreg.QueryValueEx(k, "InstallLocation")
+                        if found: break
+                except: continue
+
+        # 3. Se non trovato o non valido, CHIEDI MANUALMENTE
+        if not found or not os.path.exists(found):
+            messagebox.showinfo("Configurazione", "Seleziona la cartella principale di Skyrim (dove c'è SkyrimSE.exe)")
+            found = filedialog.askdirectory(title="Seleziona cartella di Skyrim")
+            
+        # 4. Se l'utente ha scelto qualcosa, SALVA e RITORNA
+        if found:
+            self.save_config(found, "sky_p")
+            return str(found)
+        
+        # Fallback estremo: cartella del tool
+        return str(self.current_dir)
+
+    def get_sseedit_path(self):
+        conf = os.path.join(self.current_dir, "tool_config.json")
+        if os.path.exists(conf):
+            try:
+                with open(conf, "r") as f:
+                    path = json.load(f).get("sseedit_p")
+                    if path: return path
+            except: pass
+
+        messagebox.showinfo("Configurazione", "Seleziona la cartella dove è installato SSEEdit.exe")
+        path = filedialog.askdirectory()
+        if path:
+            current_conf = {}
+            if os.path.exists(conf):
+                try:
+                    with open(conf, "r") as f: current_conf = json.load(f)
+                except: pass
+            current_conf["sseedit_p"] = path
+            with open(conf, "w") as f: json.dump(current_conf, f)
+            return path
+        return None
+
+    def save_config(self, new_path, key):
+        conf_p = os.path.join(self.current_dir, "tool_config.json")
+        existing_data = {}
+        
+        # Legge il file esistente per non perdere le altre chiavi (es. sse_p)
+        if os.path.exists(conf_p):
+            try:
+                with open(conf_p, "r") as f:
+                    existing_data = json.load(f)
+            except: pass
+            
+        existing_data[key] = new_path
+        
+        # Scrive il file aggiornato
+        try:
+            with open(conf_p, "w") as f:
+                json.dump(existing_data, f, indent=4)
+        except Exception as e:
+            print(f"Errore salvataggio config: {e}")
+
+    def copy_console(self, cmd, label):
+        pyperclip.copy(cmd)
+        label.config(text=f"✅ COPIATO: {cmd}", fg=self.gold)
+        label.after(2000, lambda: label.config(text="SELEZIONA UN COMANDO", fg="#555"))
+
+    def copy_h(self, fid, mode, nome_oggetto, target_label=None):
+        fid = str(fid).strip()
+        # Ottieni il percorso e assicurati che sia una stringa valida
+        sky_p = self.get_skyrim_path()
+        if not sky_p:
+            sky_p = str(self.current_dir)
+
+        file_p = os.path.join(sky_p, "toolid.txt")
+        cmds = []
+        
+        # Quantità intelligente
+        q = 10 if (mode in ['POTION', 'INGR', 'FOOD'] or "[MUNIZIONI]" in str(nome_oggetto).upper()) else 1
+        
+        if mode == 'DA_TE': cmds = [f"prid {fid}", "moveto player", "enable"]
+        elif mode == 'VAI': cmds = [f"player.moveto {fid}"]
+        elif mode == 'KILL': cmds = [f"prid {fid}", "kill"]
+        elif mode == 'RES': cmds = [f"prid {fid}", "resurrect 1", "enable"]
+        elif mode == 'ENABLE': cmds = [f"prid {fid}", "enable"]
+        elif mode == 'CLONE': cmds = [f"player.placeatme {fid} 1"]
+        else: cmds = [f"player.additem {fid} {q}"]
+
+        try:
+            label = target_label if target_label else self.status
+            if mode not in ['NPC_', 'MONS', 'DA_TE', 'VAI', 'KILL', 'RES', 'ENABLE', 'CLONE']:
+                pyperclip.copy(cmds)
+                msg = f"✅ {q}x {fid} COPIATO!"
+            else:
+                with open(file_p, "w") as f:
+                    f.write("\n".join(cmds))
+                pyperclip.copy("bat toolid")
+                msg = f"✅ BATCH PRONTO: bat toolid, fai Ctrl + v nella console di Skyrim"
+            
+            label.config(text=msg, fg=self.gold)
+            label.after(4000, lambda: label.config(text="PRONTO", fg="#555"))
+        except Exception as e:
+            pyperclip.copy(fid)
+            if label:
+                label.config(text="⚠️ ERRORE SCRITTURA FILE!", fg="orange")
+
     def btn_main(self, master, txt, cmd):
-        return tk.Button(master, text=txt, font=("Segoe UI", 9, "bold"), bg=self.gold, fg="#000", 
-                         relief='flat', padx=20, pady=8, command=cmd, activebackground="#fff")
+        return tk.Button(master, text=txt, font=("Segoe UI", 9, "bold"), bg=self.gold, fg="#000", relief='flat', padx=20, pady=8, cursor="hand2", command=cmd)
+
+    def is_sseedit_running(self):
+        return any("sseedit" in p.name().lower() for p in psutil.process_iter())
+
+    def start_incolla(self):
+        # 1. Recupera il percorso di SSEEdit
+        sse_path = self.get_sseedit_path()
+        if not sse_path:
+            return
+
+        # 2. Verifica/Crea la cartella Edit Scripts
+        script_dir = os.path.join(sse_path, "Edit Scripts")
+        if not os.path.exists(script_dir):
+            try:
+                os.makedirs(script_dir)
+            except Exception as e:
+                messagebox.showerror("Errore", f"Impossibile creare la cartella Edit Scripts: {e}")
+                return
+
+        file_pas = os.path.join(script_dir, "ExportToolID.pas")
+        # Prepariamo il percorso del tool per il Pascal (doppio backslash per compatibilità)
+        path_fix = self.current_dir.replace("\\", "\\\\")
+
+        # 3. Lo Script Pascal Integrale con tutti i tuoi filtri (Razza, Cibo, Anti-Junk)
+        pascal_code = f"""unit ExportToolID;
+
+interface
+  function Initialize: Integer;
+  function Process(e: IInterface): Integer;
+  function Finalize: Integer;
+
+var
+  f1, f2, f3, f4, f5, f6, f7, f8, f9, f10: TStringList;
+
+implementation
+
+function Initialize: Integer;
+begin
+  f1 := TStringList.Create; f2 := TStringList.Create; f3 := TStringList.Create;
+  f4 := TStringList.Create; f5 := TStringList.Create; f6 := TStringList.Create;
+  f7 := TStringList.Create; f8 := TStringList.Create; f9 := TStringList.Create;
+  f10 := TStringList.Create;
+  
+  f1.Add('REF,BASE,Nome'); f10.Add('REF,BASE,Nome');
+  f2.Add('ID,Nome'); f3.Add('ID,Nome'); f4.Add('ID,Nome');
+  f5.Add('ID,Nome'); f6.Add('ID,Nome'); f7.Add('ID,Nome');
+  f8.Add('ID,Nome'); f9.Add('ID,Nome');
+end;
+
+function Process(e: IInterface): Integer;
+var 
+  s, n, id_ref, id_base, l, race: string; 
+  base_rec, race_rec: IInterface;
+  isUmano: Boolean;
+begin
+  if not IsWinningOverride(e) then Exit;
+  s := Signature(e);
+  
+  if s = 'ACHR' then begin
+    base_rec := BaseRecord(e);
+    if not Assigned(base_rec) then Exit;
+    if Signature(base_rec) <> 'NPC_' then Exit;
+
+    race_rec := LinksTo(ElementByPath(base_rec, 'RNAM - Race'));
+    if Assigned(race_rec) then
+      race := GetElementEditValues(race_rec, 'FULL')
+    else
+      race := GetElementEditValues(base_rec, 'RNAM - Race');
+
+    if (Pos('Default', race) > 0) or (race = '') or (Pos('Marker', race) > 0) then Exit;
+    if Pos(' [', race) > 0 then race := Copy(race, 1, Pos(' [', race) - 1);
+
+    race := StringReplace(race, 'NordRace', 'Nord', [rfReplaceAll]);
+    race := StringReplace(race, 'Imperial', 'Imperiale', [rfReplaceAll]);
+    race := StringReplace(race, 'Breton', 'Bretone', [rfReplaceAll]);
+    race := StringReplace(race, 'Wood Elf', 'Bosmer', [rfReplaceAll]);
+    race := StringReplace(race, 'Dark Elf', 'Dunmer', [rfReplaceAll]);
+    race := StringReplace(race, 'High Elf', 'Altmer', [rfReplaceAll]);
+    race := StringReplace(race, 'Orc', 'Orco', [rfReplaceAll]);
+    race := StringReplace(race, 'Argonian', 'Argoniano', [rfReplaceAll]);
+
+    n := GetElementEditValues(base_rec, 'FULL');
+    if n = '' then n := GetElementEditValues(base_rec, 'EDID');
+
+    if (n = '') or (Length(n) < 3) or 
+       (Pos('Corpse', n) > 0) or (Pos('Treas', n) > 0) or 
+       (Pos('Lvl', n) = 1) or (Pos('dun', n) = 1) or 
+       (Pos('Vaso', n) > 0) or (Pos('Mannequin', n) > 0) or 
+       (Pos('Statua', n) > 0) or (Pos('Marker', n) > 0) or 
+       (Pos('Trigger', n) > 0) or (Pos('FX', n) > 0) then Exit;
+
+    id_ref := IntToHex(FixedFormID(e), 8);
+    id_base := IntToHex(FixedFormID(base_rec), 8);
+    n := StringReplace(n, ',', ' ', [rfReplaceAll]);
+    n := StringReplace(n, '"', '', [rfReplaceAll]);
+    
+    isUmano := False;
+    if ElementExists(base_rec, 'Head Parts') then isUmano := True;
+    if (Pos('Nord', race) > 0) or (Pos('Bretone', race) > 0) or 
+       (Pos('Imperiale', race) > 0) or (Pos('Orco', race) > 0) or
+       (Pos('Dunmer', race) > 0) or (Pos('Altmer', race) > 0) or
+       (Pos('Bosmer', race) > 0) or (Pos('Argoniano', race) > 0) or
+       (Pos('Guard', n) > 0) or (Pos('Guardia', n) > 0) then isUmano := True;
+
+    l := id_ref + ',' + id_base + ',' + Trim(n) + ' [' + Trim(race) + ']';
+    if isUmano then f1.Add(l) else f10.Add(l);
+  end 
+  else if s = 'NPC_' then Exit 
+  else begin
+    n := GetElementEditValues(e, 'FULL');
+    if (n = '') or (Length(n) < 2) then Exit;
+    id_base := IntToHex(FixedFormID(e), 8);
+    n := StringReplace(n, ',', ' ', [rfReplaceAll]);
+    n := StringReplace(n, '"', '', [rfReplaceAll]);
+    l := id_base + ',' + Trim(n);
+    
+    if s = 'WEAP' then f2.Add(l)
+    else if s = 'AMMO' then f2.Add(id_base + ',[MUNIZIONI] ' + Trim(n))
+    else if s = 'ARMO' then f3.Add(l)
+    else if s = 'INGR' then f5.Add(l)
+    else if s = 'BOOK' then f7.Add(l)
+    else if s = 'MISC' then f8.Add(l)
+    else if s = 'SPEL' then f9.Add(l)
+    else if s = 'ALCH' then begin
+      if (Pos('PANE', UpperCase(n)) > 0) or (Pos('CARNE', UpperCase(n)) > 0) or
+         (Pos('COTTO', UpperCase(n)) > 0) or (Pos('COTTA', UpperCase(n)) > 0) or 
+         (Pos('COTTE', UpperCase(n)) > 0) or (Pos('COTTI', UpperCase(n)) > 0) or
+         (Pos('CRUDE', UpperCase(n)) > 0) or (Pos('CRUDO', UpperCase(n)) > 0) or 
+         (Pos('CRUDA', UpperCase(n)) > 0) or (Pos('PASTO', UpperCase(n)) > 0) or 
+         (Pos('IMPASTO', UpperCase(n)) > 0) or (Pos('PASTICCI', UpperCase(n)) > 0) or 
+         (Pos('SUCCO', UpperCase(n)) > 0) or (Pos('CUCINATE', UpperCase(n)) > 0) or 
+         (Pos('CUCINATO', UpperCase(n)) > 0) or (Pos('PESCE', UpperCase(n)) > 0) or 
+         (Pos('IDROMELE', UpperCase(n)) > 0) or (Pos('SKOOMA', UpperCase(n)) > 0) or 
+         (Pos('DOLCE', UpperCase(n)) > 0) or (Pos('CIBO', UpperCase(n)) > 0) or 
+         (Pos('ZUPPA', UpperCase(n)) > 0) or (Pos('MELA', UpperCase(n)) > 0) or 
+         (Pos('FORMAGGIO', UpperCase(n)) > 0) or (Pos('SALE', UpperCase(n)) > 0) or 
+         (Pos('CARAFFA', UpperCase(n)) > 0) or (Pos('STUFATO', UpperCase(n)) > 0) or 
+         (Pos('PORRIDGE', UpperCase(n)) > 0) or (Pos('CREMA', UpperCase(n)) > 0) or 
+         (Pos('MARINATA', UpperCase(n)) > 0) or (Pos('STUFATE', UpperCase(n)) > 0) or 
+         (Pos('RAGU', UpperCase(n)) > 0) or (Pos('FONDUTA', UpperCase(n)) > 0) or 
+         (Pos('VINO', UpperCase(n)) > 0) or (Pos('BIRRA', UpperCase(n)) > 0) or
+         (Pos('UOVA', UpperCase(n)) > 0) or (Pos('CAROTA', UpperCase(n)) > 0) or
+         (Pos('PATATA', UpperCase(n)) > 0) or (Pos('PORRO', UpperCase(n)) > 0) or
+         (Pos('TORTA', UpperCase(n)) > 0) or (Pos('LATTE', UpperCase(n)) > 0) or
+         (Pos('BRANDY', UpperCase(n)) > 0) or (Pos('UMIDO', UpperCase(n)) > 0) or
+         (Pos('ARROSTITO', UpperCase(n)) > 0) or (Pos('GRIGLIATO', UpperCase(n)) > 0) or
+         (Pos('MARMELLATA', UpperCase(n)) > 0) or (Pos('TÈ', UpperCase(n)) > 0) or
+         (Pos('TE ', UpperCase(n)) > 0) or (Pos('SALSICCIA', UpperCase(n)) > 0) or
+         (Pos('PANCETTA', UpperCase(n)) > 0) or (Pos('SIDRO', UpperCase(n)) > 0) or
+         (Pos('SUJAMMA', UpperCase(n)) > 0) or (Pos('MAZTE', UpperCase(n)) > 0) or
+         (Pos('SHEIN', UpperCase(n)) > 0) or (Pos('FLIN', UpperCase(n)) > 0) or
+         (Pos('BURRO', UpperCase(n)) > 0) or (Pos('FARINA', UpperCase(n)) > 0) or
+         (Pos('VINSANGUE', UpperCase(n)) > 0) or (Pos('RAPA', UpperCase(n)) > 0) or
+         (Pos('CAVOLO', UpperCase(n)) > 0) or (Pos('PISELLI', UpperCase(n)) > 0) or
+         (Pos('MIRTILLI', UpperCase(n)) > 0) or (Pos('ZUCCA', UpperCase(n)) > 0) or
+         (Pos('CIPOLLA', UpperCase(n)) > 0) or (Pos('BRODO', UpperCase(n)) > 0) or
+         (Pos('ACETO', UpperCase(n)) > 0) or (Pos('OLIO', UpperCase(n)) > 0) or
+         (Pos('ZUCCHERO', UpperCase(n)) > 0) or (Pos('CONDIMENTO', UpperCase(n)) > 0) or
+         (Pos('ZUCCHINA', UpperCase(n)) > 0) or (Pos('MIELE', UpperCase(n)) > 0) or
+         (Pos('RUM', UpperCase(n)) > 0) or (Pos('SALMONE', UpperCase(n)) > 0) or
+         (Pos('MERLUZZO', UpperCase(n)) > 0) or (Pos('BRANZINO', UpperCase(n)) > 0) or
+         (Pos('CARPA', UpperCase(n)) > 0) or (Pos('CALDO', UpperCase(n)) > 0) or
+         (Pos('CALDA', UpperCase(n)) > 0) or (Pos('FAME', UpperCase(n)) > 0) or
+         (Pos('FATICA', UpperCase(n)) > 0) or (Pos('MARINATO', UpperCase(n)) > 0) or
+         (Pos('BISTECCA', UpperCase(n)) > 0) or (Pos('SALATO', UpperCase(n)) > 0) or
+         (Pos('INVOLTINO', UpperCase(n)) > 0) or (Pos('MORA TAPINELLA', UpperCase(n)) > 0) or
+         (Pos('RANA PESCATRICE', UpperCase(n)) > 0) or (Pos('ESTRATTO', UpperCase(n)) > 0) then f6.Add(l) 
+      else 
+        f4.Add(l); // Qui finiscono Nettare, Welkynd, Veleni e oggetti di mod
+    end;
+  end;
+end;
+
+function Finalize: Integer;
+var p: string;
+begin
+  p := '{path_fix}\\\\'; 
+  f1.SaveToFile(p + 'db_NPC_.csv'); f2.SaveToFile(p + 'db_WEAP.csv');
+  f3.SaveToFile(p + 'db_ARMO.csv'); f4.SaveToFile(p + 'db_POTION.csv');
+  f5.SaveToFile(p + 'db_INGR.csv'); f6.SaveToFile(p + 'db_FOOD.csv');
+  f7.SaveToFile(p + 'db_BOOK.csv'); f8.SaveToFile(p + 'db_MISC.csv');
+  f9.SaveToFile(p + 'db_SPEL.csv'); f10.SaveToFile(p + 'db_MONS.csv');
+  f1.Free; f2.Free; f3.Free; f4.Free; f5.Free; f6.Free; f7.Free; f8.Free; f9.Free; f10.Free;
+  AddMessage('DATABASE CREATI CON SUCCESSO!');
+end;
+end."""
+
+        # 4. Scrittura fisica del file
+        try:
+            with open(file_pas, "w", encoding="utf-8") as f:
+                f.write(pascal_code)
+            
+            messagebox.showinfo("VIGAND", f"Script 'ExportToolID.pas' generato con successo!\n\nLo trovi in: {script_dir}\n\nISTRUZIONI:\n1. Apri SSEEdit\n2. Seleziona tutte le mod\n3. Tasto Destro -> Apply Script\n4. Seleziona 'ExportToolID'")
+            self.status.config(text="✅ SCRIPT PRONTO IN SSEEDIT", fg=self.gold)
+            self.root.after(3000, lambda: self.status.config(text="SISTEMA PRONTO", fg=self.gold))
+        except Exception as e:
+            messagebox.showerror("Errore", f"Impossibile creare il file Pascal: {e}")
+
+    def pulisci_temp(self):
+        file_cancellati = 0
+        file_config = os.path.join(self.current_dir, "tool_config.json")
+        
+        # Lista dei file da cercare nella cartella del tool
+        for nome_file in os.listdir(self.current_dir):
+            # Cancella i database CSV e il file di configurazione
+            if (nome_file.startswith("db_") and nome_file.endswith(".csv")) or nome_file == "tool_config.json":
+                percorso_completo = os.path.join(self.current_dir, nome_file)
+                try:
+                    os.remove(percorso_completo)
+                    file_cancellati += 1
+                except Exception as e:
+                    print(f"Impossibile cancellare {nome_file}: {e}")
+
+        if file_cancellati > 0:
+            messagebox.showinfo("VIGAND", f"PULIZIA COMPLETATA!\nRimossi {file_cancellati} file.\n\nAl prossimo avvio dovrai riconfigurare i percorsi.")
+        else:
+            messagebox.showinfo("VIGAND", "Nessun file trovato da pulire.")
+    def open_db(self, filtro, titolo):
+        file_path = os.path.join(self.current_dir, f"db_{filtro}.csv")
+        if not os.path.exists(file_path):
+            messagebox.showerror("Errore", "Database mancante! Usa il tasto 1."); return
+        
+        raw_data = []
+        with open(file_path, 'r', encoding='latin-1', errors='replace') as f:
+            next(f)
+            for line in f:
+                parts = line.strip().split(',')
+                if len(parts) >= 2: raw_data.append(parts)
+
+        visti = set(); data = []
+        for p in raw_data:
+            nome_chiave = p[-1].upper().strip()
+            if nome_chiave not in visti: data.append(p); visti.add(nome_chiave)
+
+        win = tk.Toplevel(self.root); win.title(titolo); win.geometry("1200x900"); win.configure(bg='#0a0a0a')
+        tk.Label(win, text=titolo, font=("Impact", 32), bg="#0a0a0a", fg=self.gold, pady=10).pack()
+
+        # LABEL DI STATO LOCALE (In fondo)
+        local_status = tk.Label(win, text="PRONTO", bg="#0a0a0a", fg="#555", font=("Segoe UI", 10, "bold"))
+        local_status.pack(side="bottom", pady=5)
+
+        s_var = tk.StringVar(); s_bar = tk.Entry(win, textvariable=s_var, bg='#1a1a1a', fg='#ccc', font=("Segoe UI", 14), relief='flat', highlightthickness=1, highlightbackground=self.gold, insertbackground='white')
+        s_bar.insert(0, "Cerca Nome o ID..."); s_bar.pack(fill='x', padx=50, pady=20)
+        s_bar.bind('<FocusIn>', lambda e: (s_bar.delete(0, "end"), s_bar.config(fg='white')) if s_bar.get() == "Cerca Nome o ID..." else None)
+
+        nav = tk.Frame(win, bg='#0a0a0a'); nav.pack(fill='x', padx=50)
+        self.current_page = 0; self.page_size = 50
+        cont = tk.Frame(win, bg='#0a0a0a'); cont.pack(fill='both', expand=True, padx=20)
+        canv = tk.Canvas(cont, bg='#0a0a0a', highlightthickness=0); scr = tk.Scrollbar(cont, orient="vertical", command=canv.yview)
+        scroll_f = tk.Frame(canv, bg='#0a0a0a')
+        scroll_f.bind("<Configure>", lambda e: canv.configure(scrollregion=canv.bbox("all")))
+        canv_win = canv.create_window((0, 0), window=scroll_f, anchor="nw")
+        canv.bind('<Configure>', lambda e: canv.itemconfig(canv_win, width=e.width))
+        canv.configure(yscrollcommand=scr.set); win.bind_all("<MouseWheel>", lambda e: canv.yview_scroll(int(-1*(e.delta/120)), "units"))
+        canv.pack(side="left", fill="both", expand=True); scr.pack(side="right", fill="y")
+
+        def draw():
+            for w in scroll_f.winfo_children(): w.destroy()
+            for w in nav.winfo_children(): w.destroy()
+            q = s_var.get().upper().strip()
+            filt = [d for d in data if any(q in str(p).upper() for p in d)] if q and q != "CERCA NOME O ID..." else data
+            tot_i = len(filt); tp = (tot_i // self.page_size) + 1
+            if tot_i % self.page_size == 0 and tot_i > 0: tp -= 1
+            st, en = self.current_page * self.page_size, (self.current_page + 1) * self.page_size
+
+            if tp > 1:
+                tk.Button(nav, text="◀ PREV", bg="#333", fg="#fff", relief='flat', cursor="hand2", command=lambda: ch(-1, tp)).pack(side='left')
+                tk.Label(nav, text=f"PAGINA {self.current_page+1}/{tp} - TOTALE: {tot_i}", bg="#0a0a0a", fg=self.gold, font=("Segoe UI", 10, "bold")).pack(side='left', expand=True)
+                tk.Button(nav, text="NEXT ▶", bg="#333", fg="#fff", relief='flat', cursor="hand2", command=lambda: ch(1, tp)).pack(side='right')
+
+            for row_data in filt[st:en]:
+                r = tk.Frame(scroll_f, bg='#151515', pady=6); r.pack(fill='x', pady=2, padx=5)
+                
+                # --- LOGICA NPC / MOSTRI (3 COLONNE) ---
+                if filtro in ['NPC_', 'MONS']:
+                    ref = row_data[0]; base = row_data[1]; nome = row_data[2]
+                    l_ref = tk.Label(r, text=f"REF: {ref}", fg=self.gold, bg="#151515", width=14, font=("Consolas", 9, "bold"))
+                    l_ref.pack(side='left', padx=10)
+                    #l_ref.bind("<Button-1>", lambda e, i=ref: self.copy_h(i, 'DA_TE', local_status))
+                    
+                    l_base = tk.Label(r, text=f"BASE: {base}", fg="#777", bg="#151515", width=14, font=("Consolas", 9))
+                    l_base.pack(side='left')
+                    #l_base.bind("<Button-1>", lambda e, i=base: self.copy_h(i, 'CLONE', local_status))
+
+                    l_nome = tk.Label(r, text=nome, fg="#eee", bg="#151515", font=("Segoe UI", 10), anchor='w', width=55)
+                    l_nome.pack(side='left', padx=15)
+                    #l_nome.bind("<Button-1>", lambda e, i=ref: self.copy_h(i, 'DA_TE', local_status))
+
+                    opzioni = {"Vieni da me": "DA_TE", "Vai da lui": "VAI", "Uccidi": "KILL", "Resuscita": "RES", "Abilita": "ENABLE", "Clona": "CLONE"}
+                    sel_v = tk.StringVar(win); sel_v.set("Scegli Azione")
+
+                    def applica_npc(v_str, r_id, b_id, s_var, n_obj):
+                        scelta = v_str.get()
+                        if scelta == "Scegli Azione": 
+                            local_status.config(text="⚠️ SELEZIONA UN'AZIONE!", fg="red")
+                            return
+                        modo = opzioni[scelta]
+                        # Passiamo anche n_obj (il nome) per soddisfare i 4 parametri
+                        self.copy_h(b_id if modo == 'CLONE' else r_id, modo, n_obj, local_status)
+                        s_var.set("Scegli Azione")
+
+                    # Aggiorna il comando del pulsante APPLICA per passare il nome 'nome'
+                    tk.Button(r, text="APPLICA", bg="#2e4d4d", fg="#fff", font=("Segoe UI", 7, "bold"), relief='flat', width=10, 
+                              command=lambda s=sel_v, ri=ref, bi=base, sv=sel_v, no=nome: applica_npc(s, ri, bi, sv, no)).pack(side='right', padx=10)
+                    
+                    opt = tk.OptionMenu(r, sel_v, *opzioni.keys())
+                    opt.config(bg="#1a1a1a", fg=self.gold, font=("Segoe UI", 8, "bold"), relief='flat', highlightthickness=0, width=15)
+                    opt["menu"].config(bg="#1a1a1a", fg=self.gold); opt.pack(side='right', padx=5)
+
+                # --- LOGICA STANDARD (2 COLONNE: ARMI, ARMATURE, ECC.) ---
+                else:
+                    fid = row_data[0]; nome = row_data[1]
+                    l_id = tk.Label(r, text=fid, fg=self.gold, bg="#151515", width=14, font=("Consolas", 10, "bold"))
+                    l_id.pack(side='left', padx=10)
+                    #l_id.bind("<Button-1>", lambda e, i=fid: self.copy_h(i, 'ADD', local_status))
+                    
+                    l_n = tk.Label(r, text=nome, fg="#eee", bg="#151515", font=("Segoe UI", 10), anchor='w')
+                    l_n.pack(side='left', padx=20, fill='x', expand=True)
+                    #l_n.bind("<Button-1>", lambda e, i=fid: self.copy_h(i, 'ADD', local_status))
+                    
+                    tk.Button(r, text="COPIA", 
+                                bg="#c4a45d", fg="#000", # Forza il colore ORO
+                                font=("Segoe UI", 8, "bold"), relief='flat', width=12,
+                                command=lambda i=fid, n=nome: self.copy_h(i, filtro, n, local_status)
+                                ).pack(side='right', padx=10)
+
+        def ch(d, tp):
+            if 0 <= self.current_page + d < tp: self.current_page += d; draw(); canv.yview_moveto(0)
+
+        self.after_id = None
+        def reset_and_draw(*args):
+            if self.after_id: win.after_cancel(self.after_id)
+            self.after_id = win.after(1000, lambda: [setattr(self, 'current_page', 0), draw()])
+        s_var.trace_add("write", reset_and_draw); draw()
 
     def open_console_cmds(self):
-        win = tk.Toplevel(self.root); win.title("LISTA COMANDI CONSOLE"); win.geometry("1000x860"); win.configure(bg='#0a0a0a')
-        top = tk.Frame(win, bg="#111", pady=10); top.pack(fill='x')
-        tk.Label(top, text="CONSOLE COMMANDS DATABASE", font=("Impact", 24), bg="#111", fg=self.gold).pack()
-        
-        # --- DATABASE INTEGRALE COMANDI CONSOLE (140+ COMANDI BASE) ---
+        win = tk.Toplevel(self.root)
+        win.title("LISTA COMANDI CONSOLE")
+        win.geometry("1200x900")
+        win.configure(bg='#0a0a0a')
+
+        # TITOLO IMPACT
+        tk.Label(win, text="CONSOLE COMMANDS DATABASE", font=("Impact", 32), bg="#0a0a0a", fg=self.gold, pady=10).pack()
+
+        # LABEL DI STATO LOCALE (In fondo alla finestra)
+        con_status = tk.Label(win, text="SELEZIONA UN COMANDO", bg="#0a0a0a", fg="#555", font=("Segoe UI", 10, "bold"))
+        con_status.pack(side="bottom", pady=5)
+
+        # --- DATABASE INTEGRALE ---
         console_data = [
             # --- SISTEMA, VISUALIZZAZIONE E DEBUG ---
             ("tgm", "God Mode: Salute, stamina, magicka e munizioni infinite"),
@@ -243,233 +695,53 @@ class SkyrimTool:
 
         self.c_page = 0
         self.c_size = 14 
+
         nav = tk.Frame(win, bg='#0a0a0a'); nav.pack(fill='x', padx=50, pady=10)
         cont = tk.Frame(win, bg='#0a0a0a'); cont.pack(fill='both', expand=True, padx=50)
-        canv = tk.Canvas(cont, bg='#0a0a0a', highlightthickness=0); scr = tk.Scrollbar(cont, orient="vertical", command=canv.yview)
+        
+        canv = tk.Canvas(cont, bg='#0a0a0a', highlightthickness=0)
+        scr = tk.Scrollbar(cont, orient="vertical", command=canv.yview)
         scroll_f = tk.Frame(canv, bg='#0a0a0a')
+        
         scroll_f.bind("<Configure>", lambda e: canv.configure(scrollregion=canv.bbox("all")))
         canv_win = canv.create_window((0, 0), window=scroll_f, anchor="nw")
         canv.bind('<Configure>', lambda e: canv.itemconfig(canv_win, width=e.width))
-        canv.configure(yscrollcommand=scr.set); win.bind("<MouseWheel>", lambda e: canv.yview_scroll(int(-1*(e.delta/120)), "units"))
-        canv.pack(side="left", fill="both", expand=True); scr.pack(side="right", fill="y")
+        canv.configure(yscrollcommand=scr.set)
+        
+        canv.pack(side="left", fill="both", expand=True)
+        scr.pack(side="right", fill="y")
 
         def draw_console():
             for w in scroll_f.winfo_children(): w.destroy()
             for w in nav.winfo_children(): w.destroy()
-            tot = len(console_data); tp = (tot // self.c_size) + 1
+            
+            tot = len(console_data)
+            tp = (tot // self.c_size) + 1
             st, en = self.c_page * self.c_size, (self.c_page + 1) * self.c_size
+            
             if tp > 1:
-                tk.Button(nav, text="◀ PREV", bg="#333", fg="#fff", command=lambda: ch_c(-1, tp)).pack(side='left')
-                tk.Label(nav, text=f"PAGINA {self.c_page + 1}/{tp} - {tot} COMANDI", bg="#0a0a0a", fg=self.gold, font=("Segoe UI", 9, "bold")).pack(side='left', expand=True)
-                tk.Button(nav, text="NEXT ▶", bg="#333", fg="#fff", command=lambda: ch_c(1, tp)).pack(side='right')
+                tk.Button(nav, text="◀ PREV", bg="#333", fg="#fff", relief='flat', cursor="hand2",
+                          command=lambda: ch_c(-1, tp)).pack(side='left')
+                tk.Label(nav, text=f"PAGINA {self.c_page + 1}/{tp} - {tot} COMANDI", 
+                         bg="#0a0a0a", fg=self.gold, font=("Segoe UI", 9, "bold")).pack(side='left', expand=True)
+                tk.Button(nav, text="NEXT ▶", bg="#333", fg="#fff", relief='flat', cursor="hand2",
+                          command=lambda: ch_c(1, tp)).pack(side='right')
+
             for cmd, desc in console_data[st:en]:
                 r = tk.Frame(scroll_f, bg='#151515', pady=10); r.pack(fill='x', pady=2, padx=5)
                 tk.Label(r, text=cmd, fg=self.gold, bg="#151515", width=36, font=("Consolas", 10, "bold"), anchor='w').pack(side='left', padx=15)
                 tk.Label(r, text=desc, fg="#eee", bg="#151515", font=("Segoe UI", 10), anchor='w').pack(side='left', padx=10, fill='x', expand=True)
-                tk.Button(r, text="COPIA", bg=self.gold, fg="#000", font=("Segoe UI", 8, "bold"), relief='flat', padx=15, command=lambda c=cmd: pyperclip.copy(c)).pack(side='right', padx=15)
+                
+                # Feedback locale nella label con_status
+                tk.Button(r, text="COPIA", bg=self.gold, fg="#000", font=("Segoe UI", 8, "bold"), relief='flat', padx=15, 
+                          command=lambda c=cmd: [pyperclip.copy(c), con_status.config(text=f"✅ COPIATO: {c}", fg=self.gold), 
+                                                 win.after(4000, lambda: con_status.config(text="SELEZIONA UN COMANDO", fg="#555"))]).pack(side='right', padx=15)
 
         def ch_c(d, tp):
             if 0 <= self.c_page + d < tp:
                 self.c_page += d; draw_console(); canv.yview_moveto(0)
+        
         draw_console()
-
-    def is_sseedit_running(self):
-        return any("sseedit" in p.name().lower() for p in psutil.process_iter())
-
-    def start_incolla(self):
-        if not self.is_sseedit_running():
-            messagebox.showerror("Errore", "SSEEdit non è aperto!")
-            return
-        
-        path_fix = self.current_dir.replace("\\", "\\\\")
-        
-        pascal_script = f"""unit ExportVigand;
-
-interface
-  function Initialize: Integer;
-  function Process(e: IInterface): Integer;
-  function Finalize: Integer;
-
-var
-  f1, f2, f3, f4, f5, f6, f7, f8, f9, f10: TStringList;
-
-implementation
-
-function Initialize: Integer;
-begin
-  f1 := TStringList.Create; f2 := TStringList.Create; f3 := TStringList.Create;
-  f4 := TStringList.Create; f5 := TStringList.Create; f6 := TStringList.Create;
-  f7 := TStringList.Create; f8 := TStringList.Create; f9 := TStringList.Create;
-  f10 := TStringList.Create;
-  
-  // Header per i file CSV
-  f1.Add('REF,BASE,Nome'); f2.Add('ID,Nome'); f3.Add('ID,Nome');
-  f4.Add('ID,Nome'); f5.Add('ID,Nome'); f6.Add('ID,Nome');
-  f7.Add('ID,Nome'); f8.Add('ID,Nome'); f9.Add('ID,Nome');
-  f10.Add('REF,BASE,Nome');
-end;
-
-function Process(e: IInterface): Integer;
-var 
-  s, n, id_ref, id_base, l: string; 
-  base_rec: IInterface;
-begin
-  // Evita i duplicati: prende solo l'ultima versione caricata (winning override)
-  if not IsWinningOverride(e) then Exit;
-
-  s := Signature(e);
-  
-  // GESTIONE PERSONAGGI E CREATURE (RefID)
-  if s = 'ACHR' then begin
-    base_rec := BaseRecord(e);
-    if not Assigned(base_rec) then Exit;
-    
-    // Recupero Nome (Fallback su EditorID se manca il nome completo)
-    n := GetElementEditValues(base_rec, 'FULL');
-    if n = '' then n := GetElementEditValues(base_rec, 'EDID');
-    if (n = '') or (Length(n) < 2) then Exit;
-
-    id_ref := IntToHex(FixedFormID(e), 8);
-    id_base := IntToHex(FixedFormID(base_rec), 8);
-    
-    // Pulizia caratteri speciali per il CSV
-    n := StringReplace(n, ',', ' ', [rfReplaceAll]);
-    n := StringReplace(n, '"', '', [rfReplaceAll]);
-    l := id_ref + ',' + id_base + ',' + Trim(n);
-    
-    // SEPARAZIONE: Se ha "Head Parts" è un Umano (f1), altrimenti è un Mostro (f10)
-    if ElementExists(base_rec, 'Head Parts') then 
-      f1.Add(l)
-    else 
-      f10.Add(l);
-  end 
-  
-  // Ignoriamo i record base NPC_ per non avere cloni senza posizione nel mondo
-  else if s = 'NPC_' then Exit 
-  
-  // GESTIONE TUTTI GLI ALTRI OGGETTI (BaseID)
-  else begin
-    n := GetElementEditValues(e, 'FULL');
-    if (n = '') or (Length(n) < 2) then Exit;
-    
-    id_base := IntToHex(FixedFormID(e), 8);
-    n := StringReplace(n, ',', ' ', [rfReplaceAll]);
-    n := StringReplace(n, '"', '', [rfReplaceAll]);
-    l := id_base + ',' + Trim(n);
-    
-    if s = 'WEAP' then f2.Add(l)
-    else if s = 'ARMO' then f3.Add(l)
-    else if s = 'INGR' then f5.Add(l)
-    else if s = 'BOOK' then f7.Add(l)
-    else if s = 'MISC' then f8.Add(l)
-    else if s = 'SPEL' then f9.Add(l)
-    else if s = 'ALCH' then begin
-      if (Pos('PANE', UpperCase(n)) > 0) or (Pos('CARNE', UpperCase(n)) > 0) or (Pos('CIBO', UpperCase(n)) > 0) then f6.Add(l)
-      else f4.Add(l);
-    end;
-  end;
-end;
-
-function Finalize: Integer;
-var p: string;
-begin
-  p := '{path_fix}\\\\'; 
-  f1.SaveToFile(p + 'db_NPC_.csv'); f2.SaveToFile(p + 'db_WEAP.csv');
-  f3.SaveToFile(p + 'db_ARMO.csv'); f4.SaveToFile(p + 'db_POTION.csv');
-  f5.SaveToFile(p + 'db_INGR.csv'); f6.SaveToFile(p + 'db_FOOD.csv');
-  f7.SaveToFile(p + 'db_BOOK.csv'); f8.SaveToFile(p + 'db_MISC.csv');
-  f9.SaveToFile(p + 'db_SPEL.csv'); f10.SaveToFile(p + 'db_MONS.csv');
-  
-  f1.Free; f2.Free; f3.Free; f4.Free; f5.Free; f6.Free; f7.Free; f8.Free; f9.Free; f10.Free;
-  AddMessage('✅ DATABASE CREATI CON SUCCESSO!');
-end;
-
-end."""
-        pyperclip.copy(pascal_script); self.countdown(10)
-
-    def countdown(self, count):
-        if count > 0:
-            self.status.config(text=f"🔴 INCOLLO IN {count} SECONDI...", fg="#ff4444")
-            self.root.after(1000, self.countdown, count-1)
-        else:
-            pyautogui.hotkey('ctrl', 'a'); pyautogui.press('backspace'); pyautogui.hotkey('ctrl', 'v'); pyautogui.press('enter')
-            self.status.config(text="✅ SCRIPT INCOLLATO", fg="#00ff00")
-
-    def open_db(self, filtro, titolo):
-        file_path = os.path.join(self.current_dir, f"db_{filtro}.csv")
-        if not os.path.exists(file_path):
-            messagebox.showerror("Errore", "Database mancante! Usa il tasto 1."); return
-        data = []
-        with open(file_path, 'r', encoding='latin-1', errors='replace') as f:
-            next(f)
-            for line in f:
-                split_n = 2 if filtro in ['NPC_', 'MONS'] else 1
-                p = line.strip().split(',', split_n)
-                if len(p) >= 2: data.append(p)
-
-        win = tk.Toplevel(self.root); win.title(titolo); win.geometry("1100x850"); win.configure(bg='#0a0a0a')
-        top = tk.Frame(win, bg="#111", pady=10); top.pack(fill='x')
-        tk.Label(top, text=titolo, font=("Impact", 24), bg="#111", fg=self.gold).pack()
-        s_var = tk.StringVar(); s_bar = tk.Entry(win, textvariable=s_var, bg='#1a1a1a', fg='#ccc', font=("Segoe UI", 14), relief='flat', highlightthickness=1, highlightbackground=self.gold, insertbackground='white')
-        s_bar.insert(0, "Cerca Nome o ID..."); s_bar.pack(fill='x', padx=50, pady=20)
-        s_bar.bind('<FocusIn>', lambda e: (s_bar.delete(0, "end"), s_bar.config(fg='white')) if s_bar.get() == "Cerca Nome o ID..." else None)
-
-        nav = tk.Frame(win, bg='#0a0a0a'); nav.pack(fill='x', padx=50); self.current_page = 0; self.page_size = 50
-        cont = tk.Frame(win, bg='#0a0a0a'); cont.pack(fill='both', expand=True, padx=50)
-        canv = tk.Canvas(cont, bg='#0a0a0a', highlightthickness=0); scr = tk.Scrollbar(cont, orient="vertical", command=canv.yview)
-        scroll_f = tk.Frame(canv, bg='#0a0a0a'); scroll_f.bind("<Configure>", lambda e: canv.configure(scrollregion=canv.bbox("all")))
-        canv_win = canv.create_window((0, 0), window=scroll_f, anchor="nw")
-        canv.bind('<Configure>', lambda e: canv.itemconfig(canv_win, width=e.width))
-        canv.configure(yscrollcommand=scr.set); win.bind_all("<MouseWheel>", lambda e: canv.yview_scroll(int(-1*(e.delta/120)), "units"))
-        canv.pack(side="left", fill="both", expand=True); scr.pack(side="right", fill="y")
-
-        def copy_h(fid, mode):
-            if mode == 'REF': cmd = f"prid {fid}; moveto player"
-            elif mode == 'CLONE': cmd = f"player.placeatme {fid} 1"
-            else: cmd = f"player.additem {fid} 1"
-            pyperclip.copy(cmd); self.status.config(text="Comando copiato!")
-
-        def draw():
-            for w in scroll_f.winfo_children(): w.destroy()
-            for w in nav.winfo_children(): w.destroy()
-            q = s_var.get().upper()
-            filt = [d for d in data if any(q in part.upper() for part in d)] if q and q != "CERCA NOME O ID..." else data
-            tot = len(filt); tp = (tot // self.page_size) + 1
-            if tot % self.page_size == 0 and tot > 0: tp -= 1
-            st, en = self.current_page * self.page_size, (self.current_page + 1) * self.page_size
-            if tp > 1:
-                tk.Button(nav, text="◀ PREV", bg="#333", fg="#fff", command=lambda: ch(-1, tp)).pack(side='left')
-                tk.Label(nav, text=f"PAGINA {self.current_page+1}/{tp} - TOTALE: {tot}", bg="#0a0a0a", fg=self.gold, font=("Segoe UI", 9, "bold")).pack(side='left', expand=True)
-                tk.Button(nav, text="NEXT ▶", bg="#333", fg="#fff", command=lambda: ch(1, tp)).pack(side='right')
-            for row_data in filt[st:en]:
-                r = tk.Frame(scroll_f, bg='#151515', pady=5); r.pack(fill='x', pady=1, padx=5)
-                if filtro in ['NPC_', 'MONS']:
-                    ref_id, base_id, r_nome = row_data[0], row_data[1], row_data[2]
-                    tk.Label(r, text=f"REF: {ref_id}", fg=self.gold, bg="#151515", width=15, font=("Consolas", 10, "bold")).pack(side='left')
-                    tk.Label(r, text=f"BASE: {base_id}", fg="#888", bg="#151515", width=15, font=("Consolas", 10)).pack(side='left')
-                    tk.Label(r, text=r_nome, fg="#eee", bg="#151515", font=("Segoe UI", 10), anchor='w').pack(side='left', padx=10, fill='x', expand=True)
-                    if ref_id != '-':
-                        tk.Button(r, text="TELEPORT", bg="#296729", fg="#fff", font=("Segoe UI", 8, "bold"), relief='flat', width=10, command=lambda i=ref_id: copy_h(i, 'REF')).pack(side='right', padx=5)
-                    tk.Button(r, text="CLONE", bg="#8b1f1f", fg="#fff", font=("Segoe UI", 8, "bold"), relief='flat', width=10, command=lambda i=base_id: copy_h(i, 'CLONE')).pack(side='right', padx=5)
-                else:
-                    r_id, r_nome = row_data[0], row_data[1]
-                    tk.Label(r, text=r_id, fg="#888", bg="#151515", width=12, font=("Consolas", 10)).pack(side='left')
-                    tk.Label(r, text=r_nome, fg="#eee", bg="#151515", font=("Segoe UI", 10), anchor='w').pack(side='left', padx=20, fill='x', expand=True)
-                    tk.Button(r, text="COPIA", bg=self.gold, font=("Segoe UI", 8, "bold"), relief='flat', command=lambda i=r_id: copy_h(i, 'STD')).pack(side='right', padx=10)
-
-        def ch(d, tp):
-            if 0 <= self.current_page + d < tp: self.current_page += d; draw(); canv.yview_moveto(0)
-
-        self.after_id = None
-        def reset_and_draw(*args):
-            if self.after_id: win.after_cancel(self.after_id)
-            self.after_id = win.after(2000, lambda: [setattr(self, 'current_page', 0), draw()])
-        s_var.trace_add("write", reset_and_draw); draw()
-
-    def pulisci_temp(self):
-        for f in os.listdir(self.current_dir):
-            if f.startswith("db_") and f.endswith(".csv"): os.remove(f)
-        messagebox.showinfo("VIGAND", "PULIZIA OK!")
 
 if __name__ == "__main__":
     root = tk.Tk(); app = SkyrimTool(root); root.mainloop()
