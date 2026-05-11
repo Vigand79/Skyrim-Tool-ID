@@ -17,4 +17,4 @@ Skyrim Tool ID scans your **personal load order** via SSEEdit to provide 100% wo
 ## 📂 Security & Build (For Staff)
 Complete source code provided in `.py`. Compiled with **PyInstaller** for standalone compatibility.
 **Build Command:** 
-`python -m PyInstaller --noconsole --onefile --icon=logo.ico --add-data "logo.ico;." Skyrim_Tool_ID.py`
+`python -m PyInstaller --noconsole --onefile --clean --icon=logo.ico --add-data "logo.ico;." Skyrim_Tool_ID.py`
